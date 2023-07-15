@@ -11,18 +11,40 @@ import (
 	"strings"
 )
 
-func handleConnection(conn net.Conn) {
+var serverAddresses []string = []string{"127.0.0.1:8081", "127.0.0.1:8082", "127.0.0.1:8083"}
+
+func main() {
+	ln, err := net.Listen("tcp", "127.0.0.1:8080")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8000...")
+	serverPos := 0
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Fatal(err)
+		}
+		go handleConnection(conn, serverAddresses[serverPos])
+		serverPos = (serverPos + 1) % len(serverAddresses)
+		fmt.Println()
+	}
+
+}
+
+func handleConnection(conn net.Conn, serverAddress string) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
 	buf := readFromConnection(conn)
 	fmt.Fprint(os.Stdout, buf.String())
 
-	beConn, err := net.Dial("tcp", "127.0.0.1:8081")
+	beConn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
 		log.Fatal(err)
 	}
 	beConn.Write(buf.Bytes())
 
-	fmt.Print("Response from server: ")
+	fmt.Printf("Response from server %s: ", serverAddress)
 	buf = readFromConnection(beConn)
 	fmt.Fprint(os.Stdout, buf.String())
 	beConn.Close()
@@ -67,22 +89,4 @@ func readFromConnection(conn net.Conn) bytes.Buffer {
 	}
 
 	return buf
-}
-
-func main() {
-	ln, err := net.Listen("tcp", "127.0.0.1:8080")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Fprintln(os.Stdout, "Listening for connections...")
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		go handleConnection(conn)
-		fmt.Println()
-	}
-
 }

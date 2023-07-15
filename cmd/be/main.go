@@ -2,11 +2,35 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
 )
+
+func main() {
+	var hostname, port string
+	flag.StringVar(&hostname, "h", "127.0.0.1", "hostname")
+	flag.StringVar(&port, "p", "8081", "port")
+	flag.Parse()
+
+	ln, err := net.Listen("tcp", hostname+":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Fprintf(os.Stdout, "Listening for connections on %s:%s...\n", hostname, port)
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Fatal(err)
+		}
+		go handleConnection(conn)
+		fmt.Println()
+	}
+
+}
 
 func handleConnection(conn net.Conn) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
@@ -30,22 +54,4 @@ func handleConnection(conn net.Conn) {
 	conn.Write([]byte("Hello From Backend Server\r\n"))
 
 	conn.Close()
-}
-
-func main() {
-	ln, err := net.Listen("tcp", "127.0.0.1:8081")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Fprintln(os.Stdout, "Listening for connections...")
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		go handleConnection(conn)
-		fmt.Println()
-	}
-
 }
