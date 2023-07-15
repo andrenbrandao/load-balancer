@@ -27,6 +27,7 @@ func handleConnection(conn net.Conn) {
 	fmt.Fprint(os.Stdout, buf.String())
 	beConn.Close()
 
+	conn.Write(buf.Bytes())
 	conn.Close()
 }
 
