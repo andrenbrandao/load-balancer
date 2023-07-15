@@ -24,11 +24,16 @@ func handleConnection(conn net.Conn) {
 		fmt.Fprint(os.Stdout, s)
 	}
 
+	conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
+	conn.Write([]byte("Content-Length: 27\r\n"))
+	conn.Write([]byte("\r\n"))
+	conn.Write([]byte("Hello From Backend Server\r\n"))
+
 	conn.Close()
 }
 
 func main() {
-	ln, err := net.Listen("tcp", "127.0.0.1:8080")
+	ln, err := net.Listen("tcp", "127.0.0.1:8081")
 	if err != nil {
 		log.Fatal(err)
 	}
