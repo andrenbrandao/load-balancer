@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
@@ -29,10 +30,37 @@ So, this idea works if we keep executing this in the main thread. But, as soon
 as we start creating goroutines, we get incorrect memory accesses.
 
 How can we solve it?
+-- First option
+Keep a list of structs representing the servers with an active flag.
+Iterate over the list and if it is active, try to handle that connection.
+The health checks should only change that flag.
+
+Drawbacks: if we have a big list of servers and only the first and last are active,
+the round robin algorithm will have to iterate over the whole list to check which
+nodes are active
+
+-- Second option
+
 */
 
-var serverAddresses []string = []string{"127.0.0.1:8081", "127.0.0.1:8082", "127.0.0.1:8083"}
-var activeServers []string = serverAddresses
+type server struct {
+	address string
+	active  bool
+}
+
+var servers []*server = []*server{
+	{address: "127.0.0.1:8081", active: true},
+	{address: "127.0.0.1:8082", active: true},
+	{address: "127.0.0.1:8083", active: true},
+}
+
+func (s *server) activate() {
+	s.active = true
+}
+
+func (s *server) deactivate() {
+	s.active = false
+}
 
 func main() {
 	ln, err := net.Listen("tcp", "127.0.0.1:8080")
@@ -42,14 +70,33 @@ func main() {
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8000...")
 	serverPos := 0
+
+	go checkHealthyServers()
+
+OuterLoop:
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Fatal(err)
 		}
-		go checkHealthyServers()
-		go handleConnection(conn, activeServers[serverPos])
-		serverPos = (serverPos + 1) % len(activeServers)
+
+		inactiveCount := 0
+		for !servers[serverPos].active {
+			serverPos = (serverPos + 1) % len(servers)
+			inactiveCount++
+
+			if inactiveCount == len(servers) {
+				buf := bytes.Buffer{}
+				buf.WriteString("HTTP/1.1 503 Service Unavailable\r\n")
+				buf.WriteString("\r\n")
+				conn.Write(buf.Bytes())
+				conn.Close()
+				continue OuterLoop
+			}
+		}
+
+		go handleConnection(conn, servers[serverPos].address)
+		serverPos = (serverPos + 1) % len(servers)
 		fmt.Println()
 	}
 
@@ -66,9 +113,9 @@ func handleConnection(conn net.Conn, serverAddress string) {
 	}
 	beConn.Write(buf.Bytes())
 
-	fmt.Printf("Response from server %s: ", serverAddress)
+	s := fmt.Sprintf("Response from server %s: ", serverAddress)
 	buf = readFromConnection(beConn)
-	fmt.Fprint(os.Stdout, buf.String())
+	fmt.Fprint(os.Stdout, s+buf.String())
 	beConn.Close()
 
 	conn.Write(buf.Bytes())
@@ -114,35 +161,17 @@ func readFromConnection(conn net.Conn) bytes.Buffer {
 }
 
 func checkHealthyServers() {
-	for _, serverAddress := range serverAddresses {
-		if isHealthy(serverAddress) {
-			activeServers = appendIfMissing(activeServers, serverAddress)
-		} else {
-			activeServers = removeIfPresent(activeServers, serverAddress)
+	for {
+		for _, server := range servers {
+			if isHealthy(server.address) {
+				server.activate()
+			} else {
+				server.deactivate()
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
+		time.Sleep(5 * time.Second)
 	}
-	fmt.Print(activeServers)
-}
-
-func appendIfMissing(slice []string, s string) []string {
-	for _, val := range slice {
-		if val == s {
-			return slice
-		}
-	}
-
-	return append(slice, s)
-}
-
-func removeIfPresent(slice []string, s string) []string {
-	ret := []string{}
-	for _, val := range slice {
-		if val != s {
-			ret = append(ret, val)
-		}
-	}
-
-	return ret
 }
 
 func isHealthy(serverAddress string) bool {
@@ -157,9 +186,9 @@ func isHealthy(serverAddress string) bool {
 	buf.WriteString("\r\n")
 	beConn.Write(buf.Bytes())
 
-	fmt.Printf("Response from Health Check in server %s: ", serverAddress)
+	s := fmt.Sprintf("Response from Health Check in server %s: ", serverAddress)
 	buf = readFromConnection(beConn)
-	fmt.Fprint(os.Stdout, buf.String())
+	fmt.Fprint(os.Stdout, s+buf.String())
 	beConn.Close()
 
 	tokens := strings.Split(buf.String(), " ")
