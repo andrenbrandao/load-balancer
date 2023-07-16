@@ -73,12 +73,14 @@ func main() {
 
 	go checkHealthyServers()
 
-OuterLoop:
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		go handleConnection(conn, servers[serverPos].address)
+		serverPos = (serverPos + 1) % len(servers)
 
 		inactiveCount := 0
 		for !servers[serverPos].active {
@@ -91,12 +93,8 @@ OuterLoop:
 				buf.WriteString("\r\n")
 				conn.Write(buf.Bytes())
 				conn.Close()
-				continue OuterLoop
 			}
 		}
-
-		go handleConnection(conn, servers[serverPos].address)
-		serverPos = (serverPos + 1) % len(servers)
 		fmt.Println()
 	}
 
