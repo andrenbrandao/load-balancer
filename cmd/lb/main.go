@@ -71,11 +71,20 @@ func main() {
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8000...")
 
+	ch := make(chan bool)
 	go checkHealthyServers()
+	go acceptRequests(ln, ch)
 
+	if <-ch {
+		return
+	}
+}
+
+func acceptRequests(ln net.Listener, ch chan bool) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			ch <- true
 			log.Fatal(err)
 		}
 
@@ -89,11 +98,10 @@ func main() {
 			continue
 		}
 
-		go handleConnection(conn, nextServer.address)
+		handleConnection(conn, nextServer.address)
 
 		fmt.Println()
 	}
-
 }
 
 var serverPos int = -1
@@ -174,6 +182,7 @@ func readFromConnection(conn net.Conn) bytes.Buffer {
 
 func checkHealthyServers() {
 	for {
+		time.Sleep(10 * time.Second)
 		for _, server := range servers {
 			if isHealthy(server.address) {
 				server.activate()
@@ -182,7 +191,6 @@ func checkHealthyServers() {
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
-		time.Sleep(5 * time.Second)
 	}
 }
 
