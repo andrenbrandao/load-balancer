@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -69,7 +70,6 @@ func main() {
 	}
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8000...")
-	serverPos := 0
 
 	go checkHealthyServers()
 
@@ -79,25 +79,39 @@ func main() {
 			log.Fatal(err)
 		}
 
-		go handleConnection(conn, servers[serverPos].address)
-		serverPos = (serverPos + 1) % len(servers)
-
-		inactiveCount := 0
-		for !servers[serverPos].active {
-			serverPos = (serverPos + 1) % len(servers)
-			inactiveCount++
-
-			if inactiveCount == len(servers) {
-				buf := bytes.Buffer{}
-				buf.WriteString("HTTP/1.1 503 Service Unavailable\r\n")
-				buf.WriteString("\r\n")
-				conn.Write(buf.Bytes())
-				conn.Close()
-			}
+		nextServer, err := getNextServer()
+		if err != nil {
+			buf := bytes.Buffer{}
+			buf.WriteString("HTTP/1.1 503 Service Unavailable\r\n")
+			buf.WriteString("\r\n")
+			conn.Write(buf.Bytes())
+			conn.Close()
+			continue
 		}
+
+		go handleConnection(conn, nextServer.address)
+
 		fmt.Println()
 	}
 
+}
+
+var serverPos int = -1
+
+func getNextServer() (*server, error) {
+	inactiveCount := 0
+
+	serverPos = (serverPos + 1) % len(servers)
+	for !servers[serverPos].active {
+		serverPos = (serverPos + 1) % len(servers)
+		inactiveCount++
+
+		if inactiveCount == len(servers) {
+			return nil, errors.New("all servers are down")
+		}
+	}
+
+	return servers[serverPos], nil
 }
 
 func handleConnection(conn net.Conn, serverAddress string) {
