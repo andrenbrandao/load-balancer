@@ -238,7 +238,7 @@ func isHealthy(serverAddress string) bool {
 	fmt.Fprint(os.Stdout, s+res)
 	beConn.Close()
 
-	tokens := strings.Split(buf.String(), " ")
+	tokens := strings.Split(res, " ")
 	if tokens[1] != "200" && tokens[1] != "204" {
 		return false
 	}
