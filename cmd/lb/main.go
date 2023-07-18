@@ -40,7 +40,26 @@ Drawbacks: if we have a big list of servers and only the first and last are acti
 the round robin algorithm will have to iterate over the whole list to check which
 nodes are active
 
--- Second option
+*/
+
+/*
+
+When trying to do a load test with wrk and wrk2 I ended up getting many errors.
+
+Wrk would report multiple socket errors and the load balancer would also exit
+because of an EOF error.
+
+Found out that the WRK request was sending a \0 byte. So, in that case I had
+to close the request if any errors were found at reading.
+
+Also, had to answer with HTTP Header Connection: close so that the clients
+would expect the connection to be closed. Otherwise, I believe they
+wanted to keep it alive.
+
+But, if we use the http's package ListenAndServe, wrk can execute 200k
+requests per second. While this load balancer, if it only returns a fixed HTTP
+response, can only answer at 50k request/sec. Why is that? Maybe
+it is because of the keep alive?
 
 */
 
@@ -69,22 +88,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8000...")
+	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8080...")
 
-	ch := make(chan bool)
 	go checkHealthyServers()
-	go acceptRequests(ln, ch)
-
-	if <-ch {
-		return
-	}
+	acceptRequests(ln)
 }
 
-func acceptRequests(ln net.Listener, ch chan bool) {
+func acceptRequests(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			ch <- true
 			log.Fatal(err)
 		}
 
@@ -98,7 +111,7 @@ func acceptRequests(ln net.Listener, ch chan bool) {
 			continue
 		}
 
-		handleConnection(conn, nextServer.address)
+		go handleConnection(conn, nextServer.address)
 
 		fmt.Println()
 	}
@@ -124,25 +137,35 @@ func getNextServer() (*server, error) {
 
 func handleConnection(conn net.Conn, serverAddress string) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
-	buf := readFromConnection(conn)
-	fmt.Fprint(os.Stdout, buf.String())
+
+	res, err := readFromConnection(conn)
+	if err != nil {
+		log.Println(err)
+		conn.Close()
+		return
+	}
 
 	beConn, err := net.Dial("tcp", serverAddress)
+	defer beConn.Close()
+
 	if err != nil {
 		log.Fatal(err)
 	}
-	beConn.Write(buf.Bytes())
+	beConn.Write([]byte(res))
 
 	s := fmt.Sprintf("Response from server %s: ", serverAddress)
-	buf = readFromConnection(beConn)
-	fmt.Fprint(os.Stdout, s+buf.String())
-	beConn.Close()
+	res, err = readFromConnection(beConn)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	fmt.Fprint(os.Stdout, s+res)
 
-	conn.Write(buf.Bytes())
+	conn.Write([]byte(res))
 	conn.Close()
 }
 
-func readFromConnection(conn net.Conn) bytes.Buffer {
+func readFromConnection(conn net.Conn) (string, error) {
 	reader := bufio.NewReader(conn)
 
 	buf := bytes.Buffer{}
@@ -150,7 +173,7 @@ func readFromConnection(conn net.Conn) bytes.Buffer {
 	for {
 		s, err := reader.ReadString('\n')
 		if err != nil {
-			log.Fatal(err)
+			return "", err
 		}
 		buf.WriteString(s)
 
@@ -177,7 +200,7 @@ func readFromConnection(conn net.Conn) bytes.Buffer {
 		contentLength--
 	}
 
-	return buf
+	return buf.String(), nil
 }
 
 func checkHealthyServers() {
@@ -207,8 +230,12 @@ func isHealthy(serverAddress string) bool {
 	beConn.Write(buf.Bytes())
 
 	s := fmt.Sprintf("Response from Health Check in server %s: ", serverAddress)
-	buf = readFromConnection(beConn)
-	fmt.Fprint(os.Stdout, s+buf.String())
+	res, err := readFromConnection(beConn)
+	if err != nil {
+		return false
+	}
+
+	fmt.Fprint(os.Stdout, s+res)
 	beConn.Close()
 
 	tokens := strings.Split(buf.String(), " ")
