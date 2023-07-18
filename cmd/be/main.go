@@ -69,14 +69,17 @@ func handleRoute(path string) *bytes.Buffer {
 	switch path {
 	case "/health":
 		buf.Write([]byte("HTTP/1.1 204 No Content\r\n"))
+		buf.Write([]byte("Connection: close\r\n"))
 		buf.Write([]byte("\r\n"))
 	case "/":
 		buf.Write([]byte("HTTP/1.1 200 OK\r\n"))
+		buf.Write([]byte("Connection: close\r\n"))
 		buf.Write([]byte("Content-Length: 27\r\n"))
 		buf.Write([]byte("\r\n"))
 		buf.Write([]byte("Hello From Backend Server\r\n"))
 	default:
 		buf.Write([]byte("HTTP/1.1 404 Not Found\r\n"))
+		buf.Write([]byte("Connection: close\r\n"))
 		buf.Write([]byte("\r\n"))
 	}
 
