@@ -111,7 +111,7 @@ func acceptRequests(ln net.Listener) {
 			continue
 		}
 
-		go handleConnection(conn, nextServer.address)
+		go handleConnection(conn, nextServer)
 
 		fmt.Println()
 	}
@@ -135,8 +135,9 @@ func getNextServer() (*server, error) {
 	return servers[serverPos], nil
 }
 
-func handleConnection(conn net.Conn, serverAddress string) {
+func handleConnection(conn net.Conn, srv *server) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
+	defer conn.Close()
 
 	res, err := readFromConnection(conn)
 	if err != nil {
@@ -145,15 +146,17 @@ func handleConnection(conn net.Conn, serverAddress string) {
 		return
 	}
 
-	beConn, err := net.Dial("tcp", serverAddress)
+	beConn, err := net.Dial("tcp", srv.address)
+	if err != nil {
+		log.Println(err)
+		srv.deactivate()
+		return
+	}
 	defer beConn.Close()
 
-	if err != nil {
-		log.Fatal(err)
-	}
 	beConn.Write([]byte(res))
 
-	s := fmt.Sprintf("Response from server %s: ", serverAddress)
+	s := fmt.Sprintf("Response from server %s: ", srv.address)
 	res, err = readFromConnection(beConn)
 	if err != nil {
 		log.Println(err)
@@ -162,7 +165,6 @@ func handleConnection(conn net.Conn, serverAddress string) {
 	fmt.Fprint(os.Stdout, s+res)
 
 	conn.Write([]byte(res))
-	conn.Close()
 }
 
 func readFromConnection(conn net.Conn) (string, error) {
