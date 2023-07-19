@@ -104,7 +104,7 @@ func acceptRequests(ln net.Listener) {
 		nextServer, err := getNextServer()
 		if err != nil {
 			buf := bytes.Buffer{}
-			buf.WriteString("HTTP/1.1 503 Service Unavailable\r\n")
+			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
 			buf.WriteString("\r\n")
 			conn.Write(buf.Bytes())
 			conn.Close()
