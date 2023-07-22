@@ -139,32 +139,45 @@ func handleConnection(conn net.Conn, srv *server) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
 	defer conn.Close()
 
-	res, err := readFromConnection(conn)
+	clientRes, err := readFromConnection(conn)
 	if err != nil {
 		log.Println(err)
 		conn.Close()
 		return
 	}
 
-	beConn, err := net.Dial("tcp", srv.address)
-	if err != nil {
-		log.Println(err)
-		srv.deactivate()
-		return
+	retries := 3
+	for retries > 0 {
+		beConn, err := net.Dial("tcp", srv.address)
+		if err != nil {
+			log.Println(err)
+			srv.deactivate()
+			retries--
+			continue
+		}
+
+		_, err = beConn.Write([]byte(clientRes))
+		if err != nil {
+			log.Println(err)
+			srv.deactivate()
+			beConn.Close()
+			retries--
+			continue
+		}
+
+		s := fmt.Sprintf("Response from server %s: ", srv.address)
+		backendRes, err := readFromConnection(beConn)
+		if err != nil {
+			log.Println(err)
+			srv.deactivate()
+			beConn.Close()
+			retries--
+			continue
+		}
+		fmt.Fprint(os.Stdout, s+backendRes)
+		conn.Write([]byte(backendRes))
+		break
 	}
-	defer beConn.Close()
-
-	beConn.Write([]byte(res))
-
-	s := fmt.Sprintf("Response from server %s: ", srv.address)
-	res, err = readFromConnection(beConn)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	fmt.Fprint(os.Stdout, s+res)
-
-	conn.Write([]byte(res))
 }
 
 func readFromConnection(conn net.Conn) (string, error) {
