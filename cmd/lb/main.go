@@ -101,18 +101,7 @@ func acceptRequests(ln net.Listener) {
 			log.Fatal(err)
 		}
 
-		nextServer, err := getNextServer()
-		if err != nil {
-			buf := bytes.Buffer{}
-			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
-			buf.WriteString("\r\n")
-			conn.Write(buf.Bytes())
-			conn.Close()
-			continue
-		}
-
-		go handleConnection(conn, nextServer)
-
+		go handleConnection(conn)
 		fmt.Println()
 	}
 }
@@ -135,7 +124,7 @@ func getNextServer() (*server, error) {
 	return servers[serverPos], nil
 }
 
-func handleConnection(conn net.Conn, srv *server) {
+func handleConnection(conn net.Conn) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
 	defer conn.Close()
 
@@ -148,6 +137,16 @@ func handleConnection(conn net.Conn, srv *server) {
 
 	retries := 3
 	for retries > 0 {
+		srv, err := getNextServer()
+		if err != nil {
+			buf := bytes.Buffer{}
+			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
+			buf.WriteString("\r\n")
+			conn.Write(buf.Bytes())
+			conn.Close()
+			return
+		}
+
 		beConn, err := net.Dial("tcp", srv.address)
 		if err != nil {
 			log.Println(err)
