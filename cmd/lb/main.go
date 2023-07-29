@@ -63,6 +63,8 @@ it is because of the keep alive?
 
 */
 
+const timeout = 5 * time.Second
+
 type server struct {
 	address string
 	active  bool
@@ -147,7 +149,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		beConn, err := net.Dial("tcp", srv.address)
+		beConn, err := net.DialTimeout("tcp", srv.address, timeout)
 		if err != nil {
 			log.Println(err)
 			srv.deactivate()
@@ -180,6 +182,7 @@ func handleConnection(conn net.Conn) {
 }
 
 func readFromConnection(conn net.Conn) (string, error) {
+	conn.SetReadDeadline(time.Now().Add(timeout))
 	reader := bufio.NewReader(conn)
 
 	buf := bytes.Buffer{}
