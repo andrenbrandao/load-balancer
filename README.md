@@ -18,42 +18,27 @@ Execute `make build` to create the executables. It will be saved in the `bin/` d
 Execute three different web servers.
 
 ```bash
-❯ ./bin/be -p 8081
-Listening for connections on 127.0.0.1:8081...
-
-❯ ./bin/be -p 8081
-Listening for connections on 127.0.0.1:8082...
-
-❯ ./bin/be -p 8081
-Listening for connections on 127.0.0.1:8083...
+./bin/be -p 8081
+./bin/be -p 8081
+./bin/be -p 8081
 ```
 
 Now, execute the load balancer.
 
 ```bash
-❯ ./bin/lb
-Listening for connections on 127.0.0.1:8080...
+./bin/lb
 ```
 
 You can simulate do a request by using cURL.
 
 ```bash
-❯ curl http://localhost:8080
-Hello From Backend Server
+curl http://localhost:8080
 ```
 
 And to simulate multiple requests, you can use [wrk](https://github.com/wg/wrk).
 
 ```bash
-❯ wrk http://localhost:8080 -t2 -c10 -d2
-Running 2s test @ http://localhost:8080
-  2 threads and 10 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   779.03us    1.41ms  16.49ms   94.93%
-    Req/Sec     7.91k     1.68k   13.01k    90.24%
-  32322 requests in 2.10s, 4.59MB read
-Requests/sec:  15395.88
-Transfer/sec:      2.19MB
+wrk http://localhost:8080 -t2 -c10 -d2
 ```
 
 ## License
