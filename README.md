@@ -29,7 +29,7 @@ Now, execute the load balancer.
 ./bin/lb
 ```
 
-You can simulate do a request by using cURL.
+You can use cURL to make a request to our load balancer.
 
 ```bash
 curl http://localhost:8080
