@@ -19,8 +19,8 @@ Execute three different web servers.
 
 ```bash
 ./bin/be -p 8081
-./bin/be -p 8081
-./bin/be -p 8081
+./bin/be -p 8082
+./bin/be -p 8083
 ```
 
 Now, execute the load balancer.
