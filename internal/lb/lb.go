@@ -103,7 +103,7 @@ func (lb *LoadBalancer) Start() {
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8080...")
 
-	go lb.checkHealthyServers()
+	// go lb.checkHealthyServers()
 	lb.acceptRequests(ln)
 }
 
@@ -156,61 +156,70 @@ func (lb *LoadBalancer) getNextServer() (*server, error) {
 }
 
 func (lb *LoadBalancer) handleConnection(conn net.Conn) {
-	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
+	fmt.Printf("Received request from %s\n", conn.RemoteAddr())
 	defer lb.wg.Done()
 	defer conn.Close()
 
-	clientRes, err := readFromConnection(conn)
-	if err != nil {
-		log.Println(err)
-		conn.Close()
-		return
-	}
-
-	fmt.Println(clientRes)
-
+	// Reuses the same connection while EOF is not found.
+	// TODO:
+	// [X] Reuse same client connection
+	// [ ] Reuse same backend connection per client
+	// [ ] Look into setKeepAlive method for TCP in Go. What does it do?
 	for {
-		srv, err := lb.getNextServer()
+		fmt.Println("Reading from client...")
+		clientReq, err := readFromConnection(conn)
 		if err != nil {
 			log.Println(err)
-			buf := bytes.Buffer{}
-			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
-			buf.WriteString("\r\n")
-			conn.Write(buf.Bytes())
-			conn.Close()
-			return
-		}
+			log.Println("Closing connection...")
 
-		beConn, err := net.DialTimeout("tcp", srv.address, timeout)
-		if err != nil {
-			log.Println(err)
-			srv.deactivate()
-			continue
-		}
+			fmt.Printf("Request from client %s: \n--\n%s\n--\n", conn.RemoteAddr(), clientReq)
 
-		_, err = beConn.Write([]byte(clientRes))
-		if err != nil {
-			log.Println(err)
-			srv.deactivate()
-			beConn.Close()
-			continue
-		}
+			for {
+				srv, err := lb.getNextServer()
+				if err != nil {
+					log.Println(err)
+					buf := bytes.Buffer{}
+					buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
+					buf.WriteString("Connection: close\r\n")
+					conn.Write(buf.Bytes())
+					conn.Close()
+					return
+				}
 
-		s := fmt.Sprintf("Response from server %s: ", srv.address)
-		backendRes, err := readFromConnection(beConn)
-		if err != nil {
-			log.Println(err)
-			srv.deactivate()
-			beConn.Close()
-			continue
+				beConn, err := net.DialTimeout("tcp", srv.address, timeout)
+				if err != nil {
+					log.Println(err)
+					srv.deactivate()
+					continue
+				}
+
+				_, err = beConn.Write([]byte(clientReq))
+				if err != nil {
+					log.Println(err)
+					srv.deactivate()
+					beConn.Close()
+					continue
+				}
+
+				fmt.Println("Reading from backend...")
+				backendRes, err := readFromConnection(beConn)
+				if err != nil {
+					log.Println(err)
+					srv.deactivate()
+					beConn.Close()
+					continue
+				}
+				fmt.Printf("Response from server %s: \n--\n%s\n--\n", srv.address, backendRes)
+				conn.Write([]byte(backendRes))
+				beConn.Close()
+				break
+			}
 		}
-		fmt.Fprint(os.Stdout, s+backendRes)
-		conn.Write([]byte(backendRes))
-		break
 	}
 }
 
 func readFromConnection(conn net.Conn) (string, error) {
+	fmt.Println("Reading from connection... " + conn.RemoteAddr().String())
 	conn.SetReadDeadline(time.Now().Add(timeout))
 	reader := bufio.NewReader(conn)
 
