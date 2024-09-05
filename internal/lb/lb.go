@@ -189,7 +189,7 @@ func (lb *LoadBalancer) handleConnection(conn net.Conn) {
 	// Reuses the same connection while EOF is not found.
 	// TODO:
 	// [X] Reuse same client connection
-	// [ ] Reuse same backend connection per client
+	// [X] Reuse same backend connection per client
 	// [ ] Look into setKeepAlive method for TCP in Go. What does it do?
 	for {
 		fmt.Println("Reading from client...")
