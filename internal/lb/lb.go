@@ -103,7 +103,7 @@ func (lb *LoadBalancer) Start() {
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8080...")
 
-	// go lb.checkHealthyServers()
+	go lb.checkHealthyServers()
 	lb.acceptRequests(ln)
 }
 
