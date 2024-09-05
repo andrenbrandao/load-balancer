@@ -129,6 +129,32 @@ func getNextServer() (*server, error) {
 func handleConnection(conn net.Conn) {
 	fmt.Printf("Received request from %s\n", conn.RemoteAddr())
 
+	fmt.Println("Connecting to a backend server...")
+	var beConn net.Conn
+	var srv *server
+	for {
+		var err error
+		srv, err = getNextServer()
+		if err != nil {
+			log.Println(err)
+			buf := bytes.Buffer{}
+			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
+			buf.WriteString("Connection: close\r\n")
+			conn.Write(buf.Bytes())
+			conn.Close()
+			return
+		}
+
+		beConn, err = net.DialTimeout("tcp", srv.address, timeout)
+		if err != nil {
+			log.Println(err)
+			srv.deactivate()
+			continue
+		}
+		break
+	}
+	defer beConn.Close()
+
 	// Reuses the same connection while EOF is not found.
 	// TODO:
 	// [X] Reuse same client connection
@@ -147,9 +173,20 @@ func handleConnection(conn net.Conn) {
 		fmt.Printf("Request from client %s: \n--\n%s\n--\n", conn.RemoteAddr(), clientReq)
 
 		for {
-			srv, err := getNextServer()
+			_, err = beConn.Write([]byte(clientReq))
 			if err != nil {
 				log.Println(err)
+				srv.deactivate()
+				continue
+			}
+
+			fmt.Println("Reading from backend...")
+			backendRes, err := readFromConnection(beConn)
+			if err != nil {
+				log.Println(err)
+
+				srv.deactivate()
+
 				buf := bytes.Buffer{}
 				buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
 				buf.WriteString("Connection: close\r\n")
@@ -158,32 +195,8 @@ func handleConnection(conn net.Conn) {
 				return
 			}
 
-			beConn, err := net.DialTimeout("tcp", srv.address, timeout)
-			if err != nil {
-				log.Println(err)
-				srv.deactivate()
-				continue
-			}
-
-			_, err = beConn.Write([]byte(clientReq))
-			if err != nil {
-				log.Println(err)
-				srv.deactivate()
-				beConn.Close()
-				continue
-			}
-
-			fmt.Println("Reading from backend...")
-			backendRes, err := readFromConnection(beConn)
-			if err != nil {
-				log.Println(err)
-				srv.deactivate()
-				beConn.Close()
-				continue
-			}
 			fmt.Printf("Response from server %s: \n--\n%s\n--\n", srv.address, backendRes)
 			conn.Write([]byte(backendRes))
-			beConn.Close()
 			break
 		}
 	}
