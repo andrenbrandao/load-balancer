@@ -9,7 +9,10 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
+
+const timeout = 5 * time.Second
 
 func main() {
 	var hostname, port string
@@ -35,14 +38,31 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
+
+	defer conn.Close()
+	for {
+		path, err := readPathFromConnection(conn)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		buf := handleRoute(path)
+
+		fmt.Printf("Response to client %s: \n--\n%s\n--\n", conn.RemoteAddr(), buf.Bytes())
+		conn.Write(buf.Bytes())
+	}
+}
+
+func readPathFromConnection(conn net.Conn) (string, error) {
+	fmt.Println("Reading path from connection... " + conn.RemoteAddr().String())
+	conn.SetReadDeadline(time.Now().Add(timeout))
 	reader := bufio.NewReader(conn)
 
 	var path string
-
 	for {
 		s, err := reader.ReadString('\n')
 		if err != nil {
-			log.Fatal(err)
+			return "", err
 		}
 
 		if s == "\r\n" {
@@ -54,12 +74,11 @@ func handleConnection(conn net.Conn) {
 			path = tokens[1]
 		}
 
-		fmt.Fprint(os.Stdout, s)
+		fmt.Print(s)
 	}
+	fmt.Println()
 
-	buf := handleRoute(path)
-	conn.Write(buf.Bytes())
-	conn.Close()
+	return path, nil
 }
 
 func handleRoute(path string) *bytes.Buffer {
