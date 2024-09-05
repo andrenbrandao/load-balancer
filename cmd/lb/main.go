@@ -92,7 +92,7 @@ func main() {
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8080...")
 
-	// go checkHealthyServers()
+	go checkHealthyServers()
 	acceptRequests(ln)
 }
 
