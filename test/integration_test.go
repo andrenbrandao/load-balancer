@@ -2,6 +2,7 @@ package loadbalancer
 
 import (
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,6 +132,47 @@ func TestRedirectsToAvailableServer(t *testing.T) {
 	if counter2.count != 0 {
 		t.Errorf("expected counter2 to be %v but got %v", 0, counter2.count)
 	}
+}
+
+func TestHandlesMultipleClientsAtSameTime(t *testing.T) {
+	counter1 := &RequestsCounter{}
+	be := backend.Backend{Hostname: "127.0.0.1", Port: "8081", Counter: counter1}
+	go be.Start()
+	defer be.Shutdown()
+
+	counter2 := &RequestsCounter{}
+	be2 := backend.Backend{Hostname: "127.0.0.1", Port: "8082", Counter: counter2}
+	go be2.Start()
+
+	lb := loadbalancer.LoadBalancer{}
+	go lb.Start()
+	defer lb.Shutdown()
+
+	// Wait for it to start
+	time.Sleep(1 * time.Second)
+
+	assertParallelRequestsAreSuccessful(t)
+
+	got := counter1.count + counter2.count
+	expected := 10
+	if got != expected {
+		t.Errorf("expected %v but got %v", expected, got)
+	}
+}
+
+func assertParallelRequestsAreSuccessful(t testing.TB) {
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go wgAssertRequestIsSuccessful(t, &wg)
+	}
+
+	wg.Wait()
+}
+
+func wgAssertRequestIsSuccessful(t testing.TB, wg *sync.WaitGroup) {
+	assertRequestIsSuccessful(t)
+	wg.Done()
 }
 
 func assertRequestIsSuccessful(t testing.TB) {
