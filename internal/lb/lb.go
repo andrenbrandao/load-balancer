@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -66,18 +67,15 @@ it is because of the keep alive?
 const timeout = 5 * time.Second
 
 type LoadBalancer struct {
-	ln net.Listener
+	listener net.Listener
+	quit     chan interface{}
+	wg       sync.WaitGroup
+	servers  []*server
 }
 
 type server struct {
 	address string
 	active  bool
-}
-
-var servers []*server = []*server{
-	{address: "127.0.0.1:8081", active: true},
-	{address: "127.0.0.1:8082", active: true},
-	{address: "127.0.0.1:8083", active: true},
 }
 
 func (s *server) activate() {
@@ -89,56 +87,77 @@ func (s *server) deactivate() {
 }
 
 func (lb *LoadBalancer) Start() {
+	fmt.Println("Starting load balancer...")
+	lb.quit = make(chan interface{})
+	lb.servers = []*server{
+		{address: "127.0.0.1:8081", active: true},
+		{address: "127.0.0.1:8082", active: true},
+		{address: "127.0.0.1:8083", active: true},
+	}
+
 	ln, err := net.Listen("tcp", "127.0.0.1:8080")
 	if err != nil {
 		log.Fatal(err)
 	}
-	lb.ln = ln
+	lb.listener = ln
 
 	fmt.Fprintln(os.Stdout, "Listening for connections on 127.0.0.1:8080...")
 
-	go checkHealthyServers()
-	acceptRequests(ln)
+	go lb.checkHealthyServers()
+	lb.acceptRequests(ln)
 }
 
-// TODO: Implement gracefully shutdown
+// Gracefully shutdown
 // https://stackoverflow.com/a/66755998
 func (lb *LoadBalancer) Shutdown() {
 	fmt.Println("Shutting down...")
+	close(lb.quit)
+	lb.listener.Close()
+	lb.wg.Wait()
+	fmt.Println("Closed")
 }
 
-func acceptRequests(ln net.Listener) {
+func (lb *LoadBalancer) acceptRequests(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
+		fmt.Println("Accepting request...")
 		if err != nil {
-			log.Fatal(err)
+			select {
+			case <-lb.quit:
+				log.Println("Closing listener...")
+				return
+			default:
+				log.Fatal(err)
+			}
 		}
 
-		go handleConnection(conn)
+		lb.wg.Add(1)
+		go lb.handleConnection(conn)
 		fmt.Println()
 	}
 }
 
 var serverPos int = -1
 
-func getNextServer() (*server, error) {
+func (lb *LoadBalancer) getNextServer() (*server, error) {
 	inactiveCount := 0
 
-	serverPos = (serverPos + 1) % len(servers)
-	for !servers[serverPos].active {
-		serverPos = (serverPos + 1) % len(servers)
+	serverPos = (serverPos + 1) % len(lb.servers)
+	for !lb.servers[serverPos].active {
+		serverPos = (serverPos + 1) % len(lb.servers)
 		inactiveCount++
 
-		if inactiveCount == len(servers) {
+		if inactiveCount == len(lb.servers) {
 			return nil, errors.New("all servers are down")
 		}
 	}
 
-	return servers[serverPos], nil
+	return lb.servers[serverPos], nil
 }
 
-func handleConnection(conn net.Conn) {
+func (lb *LoadBalancer) handleConnection(conn net.Conn) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
+	defer lb.wg.Done()
 	defer conn.Close()
 
 	clientRes, err := readFromConnection(conn)
@@ -151,8 +170,9 @@ func handleConnection(conn net.Conn) {
 	fmt.Println(clientRes)
 
 	for {
-		srv, err := getNextServer()
+		srv, err := lb.getNextServer()
 		if err != nil {
+			log.Println(err)
 			buf := bytes.Buffer{}
 			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
 			buf.WriteString("\r\n")
@@ -229,10 +249,10 @@ func readFromConnection(conn net.Conn) (string, error) {
 	return buf.String(), nil
 }
 
-func checkHealthyServers() {
+func (lb *LoadBalancer) checkHealthyServers() {
 	for {
 		time.Sleep(10 * time.Second)
-		for _, server := range servers {
+		for _, server := range lb.servers {
 			if isHealthy(server.address) {
 				server.activate()
 			} else {
