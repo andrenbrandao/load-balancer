@@ -3,40 +3,76 @@ package backend
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"strings"
+	"sync"
 )
 
-type Backend struct{}
+type Counter interface {
+	Increment()
+}
+
+type NullCounter struct{}
+
+func (c *NullCounter) Increment() {
+}
+
+type Backend struct {
+	Hostname string
+	Port     string
+	Counter  Counter // counts the number of requests received. Needed for testing.
+	listener net.Listener
+	quit     chan interface{}
+	wg       sync.WaitGroup
+}
 
 func (b *Backend) Start() {
-	var hostname, port string
-	flag.StringVar(&hostname, "h", "127.0.0.1", "hostname")
-	flag.StringVar(&port, "p", "8081", "port")
-	flag.Parse()
-
-	ln, err := net.Listen("tcp", hostname+":"+port)
+	fmt.Printf("Starting backend... Hostname: %s, Port: %s\n", b.Hostname, b.Port)
+	ln, err := net.Listen("tcp", b.Hostname+":"+b.Port)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Fprintf(os.Stdout, "Listening for connections on %s:%s...\n", hostname, port)
+	b.quit = make(chan interface{})
+	b.listener = ln
+
+	if b.Counter == nil {
+		b.Counter = &NullCounter{}
+	}
+
+	fmt.Fprintf(os.Stdout, "Listening for connections on %s:%s...\n", b.Hostname, b.Port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Fatal(err)
+			select {
+			case <-b.quit:
+				log.Println("Closing listener...")
+				return
+			default:
+				log.Fatal(err)
+			}
 		}
-		go handleConnection(conn)
+		b.wg.Add(1)
+		go b.handleConnection(conn)
 		fmt.Println()
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func (b *Backend) Shutdown() {
+	fmt.Println("Shutting down...")
+	close(b.quit)
+	b.listener.Close()
+	b.wg.Wait()
+	fmt.Println("Shut!")
+}
+
+func (b *Backend) handleConnection(conn net.Conn) {
 	fmt.Fprintf(os.Stdout, "Received request from %s\n", conn.RemoteAddr())
+	b.Counter.Increment()
+	defer b.wg.Done()
 	reader := bufio.NewReader(conn)
 
 	var path string

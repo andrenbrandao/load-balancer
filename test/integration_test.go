@@ -32,8 +32,10 @@ func TestAnswers502BadGateway(t *testing.T) {
 }
 
 func TestAnswers200WhenBackendIsRunning(t *testing.T) {
-	be := backend.Backend{}
+	be := backend.Backend{Hostname: "127.0.0.1", Port: "8081"}
 	go be.Start()
+	defer be.Shutdown()
+
 	lb := loadbalancer.LoadBalancer{}
 	go lb.Start()
 	defer lb.Shutdown()
@@ -44,6 +46,70 @@ func TestAnswers200WhenBackendIsRunning(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed: %s", err)
 		return
+	}
+
+	got := resp.StatusCode
+	expected := http.StatusOK
+
+	if got != expected {
+		t.Errorf("expected %v but got %v", expected, got)
+	}
+}
+
+type RequestsCounter struct {
+	count int
+}
+
+func (c *RequestsCounter) Increment() {
+	c.count++
+}
+
+func TestMultipleBackends(t *testing.T) {
+	counter1 := &RequestsCounter{}
+	be := backend.Backend{Hostname: "127.0.0.1", Port: "8081", Counter: counter1}
+	go be.Start()
+	defer be.Shutdown()
+
+	counter2 := &RequestsCounter{}
+	be2 := backend.Backend{Hostname: "127.0.0.1", Port: "8082", Counter: counter2}
+	go be2.Start()
+	defer be2.Shutdown()
+
+	counter3 := &RequestsCounter{}
+	be3 := backend.Backend{Hostname: "127.0.0.1", Port: "8083", Counter: counter3}
+	go be3.Start()
+	defer be3.Shutdown()
+
+	lb := loadbalancer.LoadBalancer{}
+	go lb.Start()
+	defer lb.Shutdown()
+
+	// Wait for it to start
+	time.Sleep(1 * time.Second)
+
+	assertRequestIsSuccessful(t)
+	assertRequestIsSuccessful(t)
+	assertRequestIsSuccessful(t)
+
+	expected := 1
+
+	if counter1.count != 1 {
+		t.Errorf("expected counter1 to be %v but got %v", expected, counter1.count)
+	}
+	if counter2.count != 1 {
+		t.Errorf("expected counter2 to be %v but got %v", expected, counter2.count)
+	}
+	if counter3.count != 1 {
+		t.Errorf("expected counter3 to be %v but got %v", expected, counter3.count)
+	}
+}
+
+func assertRequestIsSuccessful(t testing.TB) {
+	t.Helper()
+
+	resp, err := http.Get("http://localhost:8080/")
+	if err != nil {
+		t.Errorf("Failed: %s", err)
 	}
 
 	got := resp.StatusCode
