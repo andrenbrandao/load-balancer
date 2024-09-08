@@ -170,9 +170,8 @@ func (lb *LoadBalancer) handleConnection(conn net.Conn) {
 			log.Println(err)
 			buf := bytes.Buffer{}
 			buf.WriteString("HTTP/1.1 502 Bad Gateway\r\n")
-			buf.WriteString("Connection: close\r\n")
+			buf.WriteString("\r\n")
 			conn.Write(buf.Bytes())
-			conn.Close()
 			return
 		}
 
