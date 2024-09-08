@@ -104,6 +104,35 @@ func TestMultipleBackends(t *testing.T) {
 	}
 }
 
+func TestRedirectsToAvailableServer(t *testing.T) {
+	counter1 := &RequestsCounter{}
+	be := backend.Backend{Hostname: "127.0.0.1", Port: "8081", Counter: counter1}
+	go be.Start()
+	defer be.Shutdown()
+
+	counter2 := &RequestsCounter{}
+	be2 := backend.Backend{Hostname: "127.0.0.1", Port: "8082", Counter: counter2}
+	go be2.Start()
+
+	lb := loadbalancer.LoadBalancer{}
+	go lb.Start()
+	defer lb.Shutdown()
+
+	// Wait for it to start
+	time.Sleep(1 * time.Second)
+	be2.Shutdown() // disconnects server 2
+
+	assertRequestIsSuccessful(t)
+	assertRequestIsSuccessful(t)
+
+	if counter1.count != 2 {
+		t.Errorf("expected counter1 to be %v but got %v", 2, counter1.count)
+	}
+	if counter2.count != 0 {
+		t.Errorf("expected counter2 to be %v but got %v", 0, counter2.count)
+	}
+}
+
 func assertRequestIsSuccessful(t testing.TB) {
 	t.Helper()
 
