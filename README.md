@@ -41,6 +41,18 @@ And to simulate multiple requests, you can use [wrk](https://github.com/wg/wrk).
 wrk http://localhost:8080 -t2 -c10 -d2
 ```
 
+## How to run the tests
+
+Execute `make test`
+
+You should see a result matching something like:
+
+```bash
+--- PASS: TestHandlesMultipleClientsAtSameTime (1.00s)
+PASS
+ok      github.com/andrenbrandao/load-balancer/test     5.021s
+```
+
 ## License
 
 [MIT](LICENSE) © André Brandão

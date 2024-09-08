@@ -4,3 +4,7 @@ build:
 
 clean:
 	rm -rf bin/
+
+.PHONY: test
+test:
+	cd test && pwd && go test -v
