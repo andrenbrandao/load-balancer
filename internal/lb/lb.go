@@ -14,56 +14,6 @@ import (
 	"time"
 )
 
-/*
-
-How to keep a list of servers and remove them if they are unhealthy?
-
-- Keep a list of the servers we have to connect to and a list
-of the active ones
-- Keep iterating over the configuredServers and checking if they are healthy,
-if one becomes inactive, remove it from the active list
-- If they become active again, add them to the list
-
-What happens if we run this health check in parallel and remove items from the list?
-The main thread may be trying to access the array with the active servers and based
-on the position, it may end up accessing an invalid index, raising a index out of range error.
-
-So, this idea works if we keep executing this in the main thread. But, as soon
-as we start creating goroutines, we get incorrect memory accesses.
-
-How can we solve it?
--- First option
-Keep a list of structs representing the servers with an active flag.
-Iterate over the list and if it is active, try to handle that connection.
-The health checks should only change that flag.
-
-Drawbacks: if we have a big list of servers and only the first and last are active,
-the round robin algorithm will have to iterate over the whole list to check which
-nodes are active
-
-*/
-
-/*
-
-When trying to do a load test with wrk and wrk2 I ended up getting many errors.
-
-Wrk would report multiple socket errors and the load balancer would also exit
-because of an EOF error.
-
-Found out that the WRK request was sending a \0 byte. So, in that case I had
-to close the request if any errors were found at reading.
-
-Also, had to answer with HTTP Header Connection: close so that the clients
-would expect the connection to be closed. Otherwise, I believe they
-wanted to keep it alive.
-
-But, if we use the http's package ListenAndServe, wrk can execute 200k
-requests per second. While this load balancer, if it only returns a fixed HTTP
-response, can only answer at 50k request/sec. Why is that? Maybe
-it is because of the keep alive?
-
-*/
-
 const timeout = 5 * time.Second
 
 type LoadBalancer struct {
@@ -139,6 +89,8 @@ func (lb *LoadBalancer) acceptRequests(ln net.Listener) {
 
 var serverPos int = -1
 
+// TODO: should either use a mutex or atomic increase serverPos
+// with atomic package.
 func (lb *LoadBalancer) getNextServer() (*server, error) {
 	inactiveCount := 0
 
@@ -249,6 +201,10 @@ func readFromConnection(conn net.Conn) (string, error) {
 	return buf.String(), nil
 }
 
+// TODO: activate and deactivate of servers needs to
+// be protected by a mutex.
+// Otherwise, this goroutine can try to write and
+// create a race condition with the main thread.
 func (lb *LoadBalancer) checkHealthyServers() {
 	for {
 		time.Sleep(10 * time.Second)
